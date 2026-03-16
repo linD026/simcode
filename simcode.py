@@ -112,11 +112,14 @@ class Agent:
         self.backend = "http://localhost:11434/api/generate"
         self.model = "qwen3.5:2b"
         # self.model = "qwen3.5:2b-q4_K_M"
-        self.max_steps = 5
-        # Format: {"name": {"script": str, "desc": str}}
+        self.max_steps = 8
+        # Format: {"name": {"script": str, "abstract": str, "desc": str}}
         self.tools = {}
         self.pipeline = []
         self.terminal = Terminal()
+
+        # status
+        self.tool_available = False
 
     def set_config(self, backend: str, model: str, max_steps: int = 8):
         self.backend = backend
@@ -136,6 +139,7 @@ class Agent:
         for item in os.listdir(skills_dir):
             tool_path = os.path.join(skills_dir, item)
             if os.path.isdir(tool_path):
+                abstract_path = os.path.join(tool_path, "ABSTRACT.md")
                 readme_path = os.path.join(tool_path, "README.md")
 
                 # Check for executable scripts (Python or Bash)
@@ -145,10 +149,20 @@ class Agent:
                 elif os.path.exists(os.path.join(tool_path, "run.sh")):
                     script_path = f"bash {os.path.join(tool_path, 'run.sh')}"
 
-                if script_path and os.path.exists(readme_path):
+                if (
+                    script_path
+                    and os.path.exists(readme_path)
+                    and os.path.exists(abstract_path)
+                ):
                     with open(readme_path, "r", encoding="utf-8") as f:
                         desc = f.read().strip()
-                    self.tools[item] = {"script": script_path, "desc": desc}
+                    with open(abstract_path, "r", encoding="utf-8") as f:
+                        abstract = f.read().strip()
+                    self.tools[item] = {
+                        "script": script_path,
+                        "abstract": abstract,
+                        "desc": desc,
+                    }
                     self.terminal.append_log(f"Loaded tool: {item}", "exec")
         return self
 
@@ -174,58 +188,82 @@ class Agent:
 
     def use_tool(self, llm_output: str) -> str:
         """Parses output for [Action: tool_name(args)] and executes it via subprocess."""
-        match = re.search(r"\[Action:\s*([a-zA-Z0-9_-]+)\((.*?)\)\]", llm_output)
-        if not match:
+        # 1. Use findall instead of search to capture every instance
+        matches = re.findall(r"\[Action:\s*([a-zA-Z0-9_-]+)\((.*?)\)\]", llm_output)
+        if not matches:
             return "No valid action found."
 
-        tool_name = match.group(1).strip()
-        args = match.group(2).strip()
+        # 2. Grab the LAST match in the list (index -1) to ignore thoughts
+        actual_action = matches[-1]
+
+        tool_name = actual_action[0].strip()
+        args = actual_action[1].strip()
+        args = args.replace('"', "").replace("'", "")
+
+        if not self.tool_available:
+            if tool_name == "get_tool_manual":
+                if args in self.tools:
+                    self.terminal.append_log(
+                        f"=> Reading Manual for: {args}", "warning", flush=True
+                    )
+                    text = f"MANUAL FOR '{args}':\n"
+                    text += f"{self.tools[args]['desc']}\n\n"
+                    text += f"You may now use [Action: {args}(...)]"
+                    self.tool_available = True
+                    return text
+                else:
+                    return f"Error: Tool '{args}' does not exist."
+            else:
+                return f"Error: Use get_tool_manual to read the manual first."
 
         if tool_name not in self.tools:
             return f"Error: Tool '{tool_name}' not found."
 
         script_cmd = self.tools[tool_name]["script"]
 
-        clean_args = args.replace('"', "").replace("'", "")
-
         cmd_list = shlex.split(
             script_cmd
         )  # e.g., turns "python skills/read_file/run.py" into a list
-        cmd_list.append(
-            clean_args
-        )  # appends the entire args string safely to sys.argv[1]
+        cmd_list.append(args)  # appends the entire args string safely to sys.argv[1]
 
-        self.terminal.append_log(
-            f"=> Executing Tool: {tool_name}({clean_args})", "warning"
-        )
+        self.terminal.append_log(f"=> Executing Tool: {tool_name}({args})", "warning")
 
         try:
             result = subprocess.run(cmd_list, capture_output=True, text=True)
             output = result.stdout if result.stdout else result.stderr
+            self.tool_available = False
             return output.strip()
         except Exception as e:
             return f"Tool Execution Failed: {str(e)}"
 
     def stream_llm(self, user_prompt: str, system_prompt: str, use_tool: bool):
         # We want the all the prompt know which tools we can use
-        tool_descriptions = "\n".join(
-            [f"- {name}: {data['desc']}" for name, data in self.tools.items()]
-        )
-
         if use_tool and self.tools:
-            full_system_prompt = (
-                f"{system_prompt}\n\n"
-                f"Following are available tools:\n"
-                f"{tool_descriptions}\n"
-                f"To use a tool, output EXACTLY: [Action: tool_name(args)]"
-            )
-            stop_sequences = ["[Observation:"]
+            if self.tool_available:
+                full_system_prompt = (
+                    f"{system_prompt}\n\n"
+                    f"To use a tool, output EXACTLY: [Action: tool_name(args)]"
+                )
+                stop_sequences = ["[Observation:"]
+            else:
+                tool_abstracts = "\n".join(
+                    [
+                        f"- {name}: {data['abstract']}"
+                        for name, data in self.tools.items()
+                    ]
+                )
+
+                full_system_prompt = (
+                    f"{system_prompt}\n\n"
+                    f"=== AVAILABLE TOOLS ===\n"
+                    f"{tool_abstracts}\n\n"
+                    f"CRITICAL RULES FOR TOOLS:\n"
+                    f"1. You CANNOT use a tool until you read its manual.\n"
+                    f"2. To read a manual, output EXACTLY: [Action: get_tool_manual(tool_name)]\n"
+                    f"3. Once you read the manual, you can use the tool by outputting: [Action: tool_name(args)]"
+                )
+                stop_sequences = []
         else:
-            # full_system_prompt = (
-            #    f"{system_prompt}\n\n"
-            #    f"Following are available tools please reference it for the works:\n"
-            #    f"{tool_descriptions}\n"
-            # )
             full_system_prompt = system_prompt
             stop_sequences = []
 
@@ -241,10 +279,10 @@ class Agent:
 
         if True:
             self.terminal.append_log(
-                "user prompt\n" + user_prompt, text_type="comment", flush=True
+                "system prompt\n" + full_system_prompt, text_type="comment", flush=True
             )
             self.terminal.append_log(
-                "system prompt\n" + full_system_prompt, text_type="comment", flush=True
+                "user prompt\n" + user_prompt, text_type="comment", flush=True
             )
 
         req = urllib.request.Request(
@@ -261,13 +299,28 @@ class Agent:
         except Exception as e:
             yield f"\n[Backend Error: {e}]"
 
+    def check_step_finished(self, llm_output):
+        keywords = [
+            "[STATUS: END]",
+            "[STATUS: FINISH]",
+            "[STATUS: FINISHED]",
+            "[STATUS: COMPLETE]",
+            "[STATUS: COMPLETED]",
+        ]
+
+        for keyword in keywords:
+            if keyword in llm_output:
+                return True
+        return False
+
     def do_step(self, step_idx, step_config, step_completed, iterations, current_ctx):
         step_name = step_config["name"]
         system_prompt = step_config["system_prompt"]
         use_tool = step_config["tool"]
 
         self.terminal.append_log(
-            f"=== Step {step_idx + 1}-{iterations}: {step_name.upper()} ===", "status"
+            f"=== Step {step_idx + 1}-{iterations}: {step_name.upper()} - tool_available: {self.tool_available} ===",
+            "status",
         )
 
         llm_output = ""
@@ -278,20 +331,19 @@ class Agent:
                 chunk, text_type="md", sys=False, end="", flush=True
             )
             llm_output += chunk
-
         # Newline after generation
         self.terminal.append_log("", flush=True, sys=False)
 
         # If the LLM says it's finished, break the loop and move to next step
-        if step_config["once"] or "[STATUS: FINISHED]" in llm_output:
+        if step_config["once"] or self.check_step_finished(llm_output):
             self.terminal.append_log("=> Plan Execution Complete.", "status")
             step_completed = True
             # Pass the final output to the next step (if there is one)
-            current_ctx = current_ctx.replace("Previous Context Start\n", "")
-            current_ctx = current_ctx.replace("Previous Context End\n", "")
-            current_ctx = f"Previous Context Start\n{current_ctx}\n\n"
+            current_ctx = current_ctx.replace("===Previous Context Start===\n", "")
+            current_ctx = current_ctx.replace("===Previous Context End===\n---\n", "")
+            current_ctx = f"===Previous Context Start===\n{current_ctx}\n\n"
             current_ctx += f"Final Output:\n{llm_output}\n"
-            current_ctx += f"Previous Context End\n"
+            current_ctx += f"===Previous Context End===\n---\n"
             return (1, step_completed, current_ctx)
 
         # Handle tool calling
@@ -303,19 +355,22 @@ class Agent:
 
             # Append the observation to the context and LOOP AGAIN within
             # the same step
-            current_ctx = f"{current_ctx}\n\n"
+            current_ctx = current_ctx.replace("===Previous Context Start===\n", "")
+            current_ctx = current_ctx.replace("===Previous Context End===\n---\n", "")
+            current_ctx = f"===Previous Context Start===\n{current_ctx}\n\n"
             current_ctx += f"Action Taken:\n{llm_output}\n\n"
-            current_ctx += f"Observation:\n{observation}"
+            current_ctx += f"Observation:\n{observation}\n"
+            current_ctx += f"===Previous Context End===\n---\n"
         else:
             # If no tool was used and it didn't explicitly finish,
             # we assume this step is done (like the Plan step)
             step_completed = True
 
-            current_ctx = current_ctx.replace("Previous Context Start\n", "")
-            current_ctx = current_ctx.replace("Previous Context End\n", "")
-            current_ctx = f"Previous Context Start\n{current_ctx}\n\n"
+            current_ctx = current_ctx.replace("===Previous Context Start===\n", "")
+            current_ctx = current_ctx.replace("===Previous Context End===\n---\n", "")
+            current_ctx = f"===Previous Context Start===\n{current_ctx}\n\n"
             current_ctx += f"Output:\n{llm_output}\n"
-            current_ctx += f"Previous Context End\n"
+            current_ctx += f"===Previous Context End===\n---\n"
 
         return (0, step_completed, current_ctx)
 
@@ -326,6 +381,7 @@ class Agent:
             step_completed = False
             iterations = 0
             max_iterations = self.max_steps
+            self.tool_available = False
 
             # The Execution Loop (Runs once for Plan, multiple times for Execute)
             while not step_completed and iterations < max_iterations:
