@@ -71,12 +71,12 @@ class Terminal:
         if result.stderr:
             self.append_log(result.stderr, text_type="error")
 
-    def append_log(self, text: str, text_type="default", sys=True,
-                   end="\n", flush=False):
+    def append_log(
+        self, text: str, text_type="default", sys=True, end="\n", flush=False
+    ):
         if sys:
             # For standard logging or streaming chunks
-            print("[simcode] " + self.color_text(text, text_type),
-                  end=end, flush=True)
+            print("[simcode] " + self.color_text(text, text_type), end=end, flush=True)
         else:
             # For full markdown blocks, parse and print
             print(self.md_parse(text), end=end, flush=flush)
@@ -273,7 +273,9 @@ class Agent:
 
         # Stream the LLM output in real-time
         for chunk in self.stream_llm(current_ctx, system_prompt, use_tool):
-            self.terminal.append_log(chunk, text_type="md", sys=False, end="", flush=True)
+            self.terminal.append_log(
+                chunk, text_type="md", sys=False, end="", flush=True
+            )
             llm_output += chunk
 
         self.terminal.append_log("")  # Newline after generation
@@ -293,8 +295,9 @@ class Agent:
         # Handle tool calling
         if use_tool and "[Action:" in llm_output:
             observation = self.use_tool(llm_output)
-            self.terminal.append_log(f"Observation: {observation}", "comment",
-                                      sys=False)
+            self.terminal.append_log(
+                f"Observation: {observation}", "comment", sys=False
+            )
 
             # Append the observation to the context and LOOP AGAIN within
             # the same step
