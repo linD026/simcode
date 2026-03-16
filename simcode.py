@@ -80,9 +80,14 @@ class Terminal:
             # For full markdown blocks, parse and print
             print(self.md_parse(text), end=end, flush=flush)
 
-    def recv_input(self, model: str):
+    def recv_input(self, base_url: str, model: str):
         prefix = f"{os.path.abspath('.')}"
-        status = self.color_text(f"({model})", text_type="status")
+        api = ""
+        if "localhost" in base_url:
+            api = "local"
+        else:
+            api = "remote"
+        status = self.color_text(f"({api}:{model})", text_type="status")
 
         self.append_log(f"┌ {prefix} {status}", text_type="default", sys=False)
         lines = []
@@ -431,7 +436,7 @@ class Agent:
         # Load tools from the skills directory on startup
         self.load_skills()
         while True:
-            ctx = self.terminal.recv_input(self.model)
+            ctx = self.terminal.recv_input(self.base_url, self.model)
             # Only run pipeline if there's actual text (ignores pure /bash cmds)
             if ctx:
                 self.do_pipeline(ctx)
