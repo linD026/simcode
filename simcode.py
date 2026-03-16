@@ -6,6 +6,7 @@ import shlex
 import subprocess
 from openai import OpenAI
 
+
 class Terminal:
     def __init__(self):
         self.log_types = {
@@ -126,25 +127,32 @@ class Agent:
         # status
         self.tool_available = False
 
-    def set_config(self, base_url: str = "", api_key_file: str = "",
-                   model: str = "", max_steps: int = 8):
+    def set_config(
+        self,
+        base_url: str = "",
+        api_key_file: str = "",
+        model: str = "",
+        max_steps: int = 8,
+    ):
         if base_url:
             self.base_url = base_url
-            
+
         if api_key_file:
             try:
                 with open(api_key_file, "r", encoding="utf-8") as f:
                     # CRITICAL: .strip() removes the hidden newline that crashes the OpenAI client
                     self.api_key = f.read().strip()
             except FileNotFoundError:
-                self.terminal.append_log(f"[!] Error: API key file '{api_key_file}' not found.", "error")
+                self.terminal.append_log(
+                    f"[!] Error: API key file '{api_key_file}' not found.", "error"
+                )
                 # Fallback to an empty string so the script
-                #doesn't hard-crash immediately
-                self.api_key = "" 
-                
+                # doesn't hard-crash immediately
+                self.api_key = ""
+
         if model:
             self.model = model
-            
+
         self.max_steps = max_steps
         return self
 
@@ -305,7 +313,7 @@ class Agent:
 
         messages = [
             {"role": "system", "content": full_system_prompt},
-            {"role": "user", "content": user_prompt}
+            {"role": "user", "content": user_prompt},
         ]
 
         # 1. Prepare the base arguments
@@ -330,6 +338,7 @@ class Agent:
 
         except Exception as e:
             import traceback
+
             error_details = traceback.format_exc()
             yield f"\n[Backend Error: {e}]\n\n--- DEBUG INFO ---\n{error_details}\n------------------\n"
 
@@ -448,11 +457,10 @@ def main():
     agent.set_config(
         # Ollama
         base_url="http://localhost:11434/v1",
-
         # gemini
-        #base_url="https://generativelanguage.googleapis.com/v1beta/openai/",
-        #api_key_file="api_key.txt",
-        #model="gemini-2.5-flash"
+        # base_url="https://generativelanguage.googleapis.com/v1beta/openai/",
+        # api_key_file="api_key.txt",
+        # model="gemini-2.5-flash"
     )
     # Ensure the steps directory exists
     if not os.path.exists("steps"):
