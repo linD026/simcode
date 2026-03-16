@@ -22,7 +22,7 @@ A lightweight, fully local LLM Agent framework designed to run in your terminal.
 
 ```text
 .
-├── main.py                 # The core Agent and Terminal script
+├── simcode.py              # The core Agent and Terminal script
 ├── steps/                  # System prompts for the cognitive pipeline
 │   ├── plan.md             # Instructs the LLM how to break down tasks
 │   └── execute.md          # Instructs the LLM how to loop and use tools
@@ -34,18 +34,6 @@ A lightweight, fully local LLM Agent framework designed to run in your terminal.
     └── read_file/
 
 ```
-
-## Installation & Setup
-
-1. Clone or download this repository.
-2. Ensure the `steps/` directory exists with `plan.md` and `execute.md` properly configured for your pipeline.
-3. Start the agent:
-```bash
-python main.py
-
-```
-
-
 
 ## Usage Guide
 
