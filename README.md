@@ -87,3 +87,12 @@ By default, the agent runs a two-step pipeline:
 
 1. **Plan (`once: True`):** The agent reads the user prompt and generates a checklist. It does not use tools here.
 2. **Execute (`once: False`):** The agent iterates over the checklist. It outputs `[Action: tool(args)]`, the framework pauses the LLM, executes the local script, captures the `STDOUT`, and feeds it back to the LLM as an `Observation:`. This loop continues until the LLM outputs `[STATUS: FINISHED]`.
+
+
+---
+
+## TODO List
+
+- Agentic memory management
+- Subagent - context independent
+- Show all the config in CLI
