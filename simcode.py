@@ -71,19 +71,21 @@ class Terminal:
         if result.stderr:
             self.append_log(result.stderr, text_type="error")
 
-    def append_log(self, text: str, text_type="default", end="\n", flush=False):
-        if text_type == "md":
+    def append_log(self, text: str, text_type="default", sys=True,
+                   end="\n", flush=False):
+        if sys:
+            # For standard logging or streaming chunks
+            print("[simcode] " + self.color_text(text, text_type),
+                  end=end, flush=True)
+        else:
             # For full markdown blocks, parse and print
             print(self.md_parse(text), end=end, flush=flush)
-        else:
-            # For standard logging or streaming chunks
-            print("[simcode] " + self.color_text(text, text_type), end=end, flush=flush)
 
     def recv_input(self, model: str):
         prefix = f"{os.path.abspath('.')}"
         status = self.color_text(f"({model})", text_type="status")
 
-        self.append_log(f"┌ {prefix} {status}", text_type="md")
+        self.append_log(f"┌ {prefix} {status}", text_type="default", sys=False)
         lines = []
         while True:
             line = input(f"└─> ")
@@ -99,7 +101,7 @@ class Terminal:
             cmd = text.replace("/bash ", "")
             prefix_txt = self.color_text("run", text_type="exec")
             cmd_txt = self.color_text(cmd, text_type="comment")
-            self.append_log(f"[{prefix_txt}] {cmd_txt}")
+            self.append_log(f"[{prefix_txt}] {cmd_txt}", sys=False)
             self.exec_cmd(cmd)
             return ""  # Return empty so pipeline doesn't trigger on raw bash
         return text
@@ -258,7 +260,7 @@ class Agent:
         except Exception as e:
             yield f"\n[Backend Error: {e}]"
 
-    def do_step(self, step_idx, step_config, iterations, current_ctx):
+    def do_step(self, step_idx, step_config, step_completed, iterations, current_ctx):
         step_name = step_config["name"]
         system_prompt = step_config["system_prompt"]
         use_tool = step_config["tool"]
@@ -271,7 +273,7 @@ class Agent:
 
         # Stream the LLM output in real-time
         for chunk in self.stream_llm(current_ctx, system_prompt, use_tool):
-            self.terminal.append_log(chunk, text_type="md", end="", flush=True)
+            self.terminal.append_log(chunk, text_type="md", sys=False, end="", flush=True)
             llm_output += chunk
 
         self.terminal.append_log("")  # Newline after generation
@@ -281,15 +283,18 @@ class Agent:
             self.terminal.append_log("=> Plan Execution Complete.", "status")
             step_completed = True
             # Pass the final output to the next step (if there is one)
+            current_ctx = current_ctx.replace("Previous Context Start\n", "")
+            current_ctx = current_ctx.replace("Previous Context End\n", "")
             current_ctx = f"Previous Context Start\n{current_ctx}\n\n"
             current_ctx += f"Final Output:\n{llm_output}\n"
             current_ctx += f"Previous Context End\n"
-            return (1, current_ctx)
+            return (1, step_completed, current_ctx)
 
         # Handle tool calling
         if use_tool and "[Action:" in llm_output:
             observation = self.use_tool(llm_output)
-            self.terminal.append_log(f"Observation: {observation}", "comment")
+            self.terminal.append_log(f"Observation: {observation}", "comment",
+                                      sys=False)
 
             # Append the observation to the context and LOOP AGAIN within
             # the same step
@@ -300,11 +305,14 @@ class Agent:
             # If no tool was used and it didn't explicitly finish,
             # we assume this step is done (like the Plan step)
             step_completed = True
+
+            current_ctx = current_ctx.replace("Previous Context Start\n", "")
+            current_ctx = current_ctx.replace("Previous Context End\n", "")
             current_ctx = f"Previous Context Start\n{current_ctx}\n\n"
             current_ctx += f"Output:\n{llm_output}\n"
             current_ctx += f"Previous Context End\n"
 
-        return (0, current_ctx)
+        return (0, step_completed, current_ctx)
 
     def do_pipeline(self, initial_ctx: str):
         current_ctx = initial_ctx
@@ -318,8 +326,8 @@ class Agent:
             while not step_completed and iterations < max_iterations:
                 iterations += 1
 
-                ret, current_ctx = self.do_step(
-                    step_idx, step_config, iterations, current_ctx
+                ret, step_completed, current_ctx = self.do_step(
+                    step_idx, step_config, step_completed, iterations, current_ctx
                 )
                 if ret == 1:
                     break
