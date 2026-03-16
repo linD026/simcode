@@ -110,7 +110,7 @@ class Agent:
         self.backend = "http://localhost:11434/api/generate"
         self.model = "qwen3.5:2b"
         # self.model = "qwen3.5:2b-q4_K_M"
-        self.max_steps = 2
+        self.max_steps = 5
         self.tools = {}  # Format: {"name": {"script": str, "desc": str}}
         self.pipeline = []
         self.terminal = Terminal()
@@ -281,8 +281,9 @@ class Agent:
             self.terminal.append_log("=> Plan Execution Complete.", "status")
             step_completed = True
             # Pass the final output to the next step (if there is one)
-            current_ctx = f"Previous Context:\n{current_ctx}\n\n"
-            current_ctx += f"Final Output:\n{llm_output}"
+            current_ctx = f"Previous Context Start\n{current_ctx}\n\n"
+            current_ctx += f"Final Output:\n{llm_output}\n"
+            current_ctx += f"Previous Context End\n"
             return (1, current_ctx)
 
         # Handle tool calling
@@ -299,8 +300,9 @@ class Agent:
             # If no tool was used and it didn't explicitly finish,
             # we assume this step is done (like the Plan step)
             step_completed = True
-            current_ctx = f"Previous Context:\n{current_ctx}\n\n"
-            current_ctx += f"Output:\n{llm_output}"
+            current_ctx = f"Previous Context Start\n{current_ctx}\n\n"
+            current_ctx += f"Output:\n{llm_output}\n"
+            current_ctx += f"Previous Context End\n"
 
         return (0, current_ctx)
 
