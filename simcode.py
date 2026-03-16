@@ -442,12 +442,12 @@ def main():
 
     agent.set_config(
         # Ollama
-        #base_url="http://localhost:11434/v1",
+        base_url="http://localhost:11434/v1",
 
         # gemini
-        base_url="https://generativelanguage.googleapis.com/v1beta/openai/",
-        api_key_file="api_key.txt",
-        model="gemini-2.5-flash"
+        #base_url="https://generativelanguage.googleapis.com/v1beta/openai/",
+        #api_key_file="api_key.txt",
+        #model="gemini-2.5-flash"
     )
     # Ensure the steps directory exists
     if not os.path.exists("steps"):
