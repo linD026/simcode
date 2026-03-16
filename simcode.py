@@ -113,7 +113,8 @@ class Agent:
         self.model = "qwen3.5:2b"
         # self.model = "qwen3.5:2b-q4_K_M"
         self.max_steps = 5
-        self.tools = {}  # Format: {"name": {"script": str, "desc": str}}
+        # Format: {"name": {"script": str, "desc": str}}
+        self.tools = {}
         self.pipeline = []
         self.terminal = Terminal()
 
@@ -278,7 +279,8 @@ class Agent:
             )
             llm_output += chunk
 
-        self.terminal.append_log("")  # Newline after generation
+        # Newline after generation
+        self.terminal.append_log("", flush=True, sys=False)
 
         # If the LLM says it's finished, break the loop and move to next step
         if step_config["once"] or "[STATUS: FINISHED]" in llm_output:
