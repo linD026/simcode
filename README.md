@@ -4,7 +4,6 @@ A lightweight, fully local LLM Agent framework designed to run in your terminal.
 
 ## Features
 
-- **Local & Private:** Runs entirely on your machine using Ollama.
 - **Dynamic Skill System:** Add new tools just by dropping a script and a README into the `skills/` folder. No core code changes required.
 - **Cognitive Pipeline:** Separates thinking into distinct steps (e.g., "Plan" then "Execute") to get highly accurate results from smaller models.
 - **Native Markdown Terminal UI:** Renders headers, lists, and code blocks in colored ANSI text.
@@ -13,10 +12,12 @@ A lightweight, fully local LLM Agent framework designed to run in your terminal.
 ## Prerequisites
 
 1. **Python 3.8+**
-2. **Ollama:** Installed and running locally.
-3. **LLM Model:** Pull the default model before running:
+2. **OpenAI API**
+3. **Ollama:** Installed and running locally.
+4. **LLM Model:** Pull the default model before running:
    ```bash
    ollama run qwen3.5:2b
+    ```
 
 ## Project Structure
 
@@ -29,6 +30,7 @@ A lightweight, fully local LLM Agent framework designed to run in your terminal.
 └── skills/                 # Directory for dynamic tools
     ├── list_directory/
     │   ├── README.md       # Teaches the LLM how to use this tool
+    │   ├── ABSTRACT.md     # Teaches the LLM how to use this tool in brief
     │   └── run.py          # The actual tool execution script
     ├── grep/
     └── read_file/
@@ -63,7 +65,8 @@ The agent automatically loads tools on startup. To create a new tool:
 
 1. Create a new folder in `skills/` (e.g., `skills/my_tool/`).
 2. Add a `run.py` (or `run.sh`). This script must accept arguments via the command line (e.g., `sys.argv[1]`).
-3. Add a `README.md`. The contents of this file are injected directly into the LLM's system prompt.
+3. Add a `ABSTRACT.md`. The abstract of this file are injected directly into the LLM's system prompt.
+4. Add a `README.md`. The contents of this file are injected directly into the LLM's system prompt.
 
 **Example `README.md` structure:**
 
@@ -73,6 +76,10 @@ Brief description of what the tool does.
 Format: `[Action: my_tool(arg1, arg2)]`
 
 ```
+
+## Two-steps to Run the Tools
+
+The agent needs to first check the tool manual first before running it.
 
 ## How the Pipeline Works
 
