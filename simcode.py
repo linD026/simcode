@@ -1,11 +1,10 @@
 import sys
 import os
 import json
-import urllib.request
 import re
 import shlex
 import subprocess
-
+from openai import OpenAI
 
 class Terminal:
     def __init__(self):
@@ -109,7 +108,8 @@ class Terminal:
 
 class Agent:
     def __init__(self):
-        self.backend = "http://localhost:11434/api/generate"
+        self.base_url = "http://localhost:11434/api/generate"
+        self.api_key = "DUMP"
         self.model = "qwen3.5:2b"
         # self.model = "qwen3.5:2b-q4_K_M"
         self.max_steps = 8
@@ -121,9 +121,25 @@ class Agent:
         # status
         self.tool_available = False
 
-    def set_config(self, backend: str, model: str, max_steps: int = 8):
-        self.backend = backend
-        self.model = model
+    def set_config(self, base_url: str = "", api_key_file: str = "",
+                   model: str = "", max_steps: int = 8):
+        if base_url:
+            self.base_url = base_url
+            
+        if api_key_file:
+            try:
+                with open(api_key_file, "r", encoding="utf-8") as f:
+                    # CRITICAL: .strip() removes the hidden newline that crashes the OpenAI client
+                    self.api_key = f.read().strip()
+            except FileNotFoundError:
+                self.terminal.append_log(f"[!] Error: API key file '{api_key_file}' not found.", "error")
+                # Fallback to an empty string so the script
+                #doesn't hard-crash immediately
+                self.api_key = "" 
+                
+        if model:
+            self.model = model
+            
         self.max_steps = max_steps
         return self
 
@@ -237,7 +253,14 @@ class Agent:
             return f"Tool Execution Failed: {str(e)}"
 
     def stream_llm(self, user_prompt: str, system_prompt: str, use_tool: bool):
-        # We want the all the prompt know which tools we can use
+        if not self.api_key:
+            yield "\n[Error: API key not set. Please set it in set_config.]\n"
+            return
+
+        # Initialize the OpenAI client with dynamic base URL
+        client = OpenAI(base_url=self.base_url, api_key=self.api_key)
+
+        # We want all the prompt to know which tools we can use
         if use_tool and self.tools:
             if self.tool_available:
                 full_system_prompt = (
@@ -267,16 +290,6 @@ class Agent:
             full_system_prompt = system_prompt
             stop_sequences = []
 
-        payload = json.dumps(
-            {
-                "model": self.model,
-                "prompt": user_prompt,
-                "system": full_system_prompt,
-                "stream": True,
-                "stop": stop_sequences,
-            }
-        ).encode("utf-8")
-
         if True:
             self.terminal.append_log(
                 "system prompt\n" + full_system_prompt, text_type="comment", flush=True
@@ -285,19 +298,35 @@ class Agent:
                 "user prompt\n" + user_prompt, text_type="comment", flush=True
             )
 
-        req = urllib.request.Request(
-            self.backend,
-            data=payload,
-            headers={"Content-Type": "application/json"},
-        )
+        messages = [
+            {"role": "system", "content": full_system_prompt},
+            {"role": "user", "content": user_prompt}
+        ]
+
+        # 1. Prepare the base arguments
+        api_kwargs = {
+            "model": self.model,
+            "messages": messages,
+            "stream": True,
+        }
+
+        # 2. Conditionally add 'stop' ONLY if it is not empty
+        if stop_sequences:
+            api_kwargs["stop"] = stop_sequences
 
         try:
-            with urllib.request.urlopen(req) as response:
-                for line in response:
-                    if line:
-                        yield json.loads(line.decode("utf-8")).get("response", "")
+            # 3. Pass the arguments using **kwargs unpacking
+            response = client.chat.completions.create(**api_kwargs)
+
+            # Stream chunks exactly as they arrive
+            for chunk in response:
+                if chunk.choices and chunk.choices[0].delta.content:
+                    yield chunk.choices[0].delta.content
+
         except Exception as e:
-            yield f"\n[Backend Error: {e}]"
+            import traceback
+            error_details = traceback.format_exc()
+            yield f"\n[Backend Error: {e}]\n\n--- DEBUG INFO ---\n{error_details}\n------------------\n"
 
     def check_step_finished(self, llm_output):
         keywords = [
@@ -411,6 +440,15 @@ class Agent:
 def main():
     agent = Agent()
 
+    agent.set_config(
+        # Ollama
+        #base_url="http://localhost:11434/v1",
+
+        # gemini
+        base_url="https://generativelanguage.googleapis.com/v1beta/openai/",
+        api_key_file="api_key.txt",
+        model="gemini-2.5-flash"
+    )
     # Ensure the steps directory exists
     if not os.path.exists("steps"):
         os.makedirs("steps")
